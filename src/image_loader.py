@@ -7,7 +7,7 @@ from PIL import Image, ImageOps
 from tqdm import tqdm
 
 
-def get_image_paths(folder: str, start: int, end: int):
+def get_image_paths(folder: str, start: int, end: int, shuffle: bool = False):
     """
     Get slice of image paths in a folder
 
@@ -15,7 +15,10 @@ def get_image_paths(folder: str, start: int, end: int):
     :param start: Start index
     :param end: End index
     """
-    return [os.path.join(folder, file_name) for file_name in os.listdir(folder)[start:end]]
+    image_paths = [os.path.join(folder, file_name) for file_name in os.listdir(folder)]
+    if shuffle:
+        np.random.shuffle(image_paths)
+    return image_paths[start:end]
 
 def read_images(file_paths: list, *, resize_dimensions: Optional[tuple] = (400,400), show_progress: bool = True):
     """
