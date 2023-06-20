@@ -173,6 +173,9 @@ def train(*, train_path: str, tensorboard_path: str, model_save_path: str, perce
     model_name = os.path.splitext(os.path.basename(model_save_path))[0]
     if not os.path.isdir(model_checkpoint_dir) and save_checkpoints:
         os.mkdir(model_checkpoint_dir)
+    
+    base_path = os.path.relpath(os.path.dirname(model_save_path))
+    csv_path = os.path.join(base_path, f'{model_name}_hist.csv')
 
     # train model
     batches = int((train.n // train.batch_size) * percentage)
@@ -180,7 +183,13 @@ def train(*, train_path: str, tensorboard_path: str, model_save_path: str, perce
 
     for i in iterator:
         vgg_features, Y = run_encoder_vgg(train[i], encoder_model)
-        decoder_model.fit(vgg_features, Y, validation_split=0.1, epochs=epochs, batch_size=32, verbose=0, callbacks=[tensorboard_callback])
+        hist = decoder_model.fit(vgg_features, Y, validation_split=0.1, epochs=epochs, batch_size=32, verbose=0, callbacks=[tensorboard_callback])
+        df_hist = pd.DataFrame(hist.history)
+        if not os.path.isfile(csv_path):
+            df_hist.to_csv(csv_path, index=False)
+        else:
+            df_hist.to_csv(csv_path, mode='a', header=False, index=False)
+
 
         if not tqdm_on:
             print(f'Cycle done: {i+1}/{batches}')

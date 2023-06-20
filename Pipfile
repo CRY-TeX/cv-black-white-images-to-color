@@ -10,8 +10,17 @@ numpy = "*"
 seaborn = "*"
 kaggle = "*"
 requests = "*"
+tensorflow-cpu = "*"
+scikit-learn = "*"
+scikit-image = "*"
+tqdm = "*"
 
 [dev-packages]
+ipython = "*"
+jupyterlab = "*"
+notebook = "*"
+pandas = "*"
+tensorboard = "*"
 
 [requires]
 python_version = "3.10"
