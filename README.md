@@ -5,5 +5,5 @@
 To install the `colorizer` package run following command:
 
 ```bash
-pip install git+https://github.com/CRY-TeX/cv-black-white-images-to-color#egg=colorizer@package
+pip install git+https://github.com/CRY-TeX/cv-black-white-images-to-color.git@package#egg=colorizer
 ```
