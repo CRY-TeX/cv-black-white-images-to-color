@@ -1,9 +1,12 @@
+import logging
 import os
 import time
+from argparse import ArgumentParser
 
 import keras
 import keras.layers as kl
 import keras.models as km
+import keras.optimizers
 import keras.utils as ku
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,9 +22,10 @@ from tqdm import tqdm
 
 # PATHS TO DATA
 TRAIN_PATH = '/app/data/imagenet_data/train/'
-TENSORBOARD_PATH = '/app/tensorboard/vgg19_tensorboard_logs_full'
-HIST_DATAFRAME_PATH = '/app/output/vgg19_hist_dataframe_full.csv'
-MODEL_SAVE_PATH = '/app/models/decoder_vgg19_full.h5'
+TENSORBOARD_PATH = '/app/tensorboard/tensorboard_logs_throwaway'
+# HIST_DATAFRAME_PATH = '/app/output/vgg19_hist_dataframe_full_2.csv'
+MODEL_SAVE_PATH = '/app/models/decoder_throwaway.h5'
+# CHECKPOINT_PATH = "/app/checkpoints/cp.ckpt"
 
 # FUNCTIONS
 def create_XY(data: list):
@@ -66,15 +70,24 @@ def create_decoder_model():
     decoder_model.add(kl.Conv2D(256, (3, 3), activation='relu', padding='same', input_shape=(14, 14, 512)))
     decoder_model.add(kl.Conv2D(128, (3, 3), activation='relu', padding='same'))
     decoder_model.add(kl.Conv2D(64, (3, 3), activation='relu', padding='same'))
+    decoder_model.add(kl.Conv2D(64, (3, 3), activation='relu', padding='same'))
     decoder_model.add(kl.UpSampling2D((2, 2)))
     decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
     decoder_model.add(kl.UpSampling2D((2, 2)))
+    decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    decoder_model.add(kl.UpSampling2D((2, 2)))
+    decoder_model.add(kl.Conv2D(32, (3, 3), activation='relu', padding='same'))
     decoder_model.add(kl.Conv2D(16, (3, 3), activation='relu', padding='same'))
-    decoder_model.add(kl.UpSampling2D((2, 2)))
     decoder_model.add(kl.Conv2D(2, (3, 3), activation='tanh', padding='same'))
     decoder_model.add(kl.UpSampling2D((2, 2)))
 
-    decoder_model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+    adam = keras.optimizers.Adam(learning_rate=0.00001)
+
+    decoder_model.compile(optimizer=adam, loss='mse', metrics=['accuracy'])
     return decoder_model
 
 def run_encoder_vgg(data, vgg_model):
@@ -85,13 +98,14 @@ def run_encoder_vgg(data, vgg_model):
     vgg_features = out_vgg(X, vgg_model)
     return vgg_features, Y
 
-def predict_grayscal2rgb(file_paths, encoder_model, decoder_model):
+
+def predict_grayscale_to_rgb(file_paths, encoder_model, decoder_model):
     """
     Predict the rgb images from the grayscale images.
     """
     rgb_images = []
     for file in tqdm(file_paths):
-        test = ku.img_to_array(ku.load_img(os.path.join(TEST_PATH, file)))
+        test = ku.img_to_array(ku.load_img(file))
         test = resize(test, (224, 224), anti_aliasing=True)
         test *= 1.0 / 255
         lab = skc.rgb2lab(test)
@@ -101,7 +115,7 @@ def predict_grayscal2rgb(file_paths, encoder_model, decoder_model):
         vggpred = encoder_model.predict(L, verbose=0)
         ab = decoder_model.predict(vggpred, verbose=0)
         ab = ab * 128
-
+     
         cur = np.zeros((224, 224, 3))
         cur[:, :, 0] = l
         cur[:, :, 1:] = ab
@@ -113,14 +127,20 @@ def predict_grayscal2rgb(file_paths, encoder_model, decoder_model):
     return rgb_images
 
 
-def main():
-    # download VGG19 model
-    vgg_model = VGG19()
 
-    # Base VGG19 convolutional layers until (14, 14, 512)
-    encoder_model = km.Sequential(
-        vgg_model.layers[:-5]
-    )
+
+def main(*, train_path: str, tensorboard_path: str, model_save_path: str, percentage: float, epochs: int, save_checkpoints: bool, tqdm_on: bool = False):
+    if os.path.isfile('/app/models/encoder/vgg19_encoder.h5'):
+        encoder_model = km.load_model('/app/models/encoder/vgg19_encoder.h5')
+    else:
+        # download VGG19 model
+        vgg_model = VGG19()
+
+        # Base VGG19 convolutional layers until (14, 14, 512)
+        encoder_model = km.Sequential(
+            vgg_model.layers[:-5]
+        )
+
     # freeze layers in the encoder model
     for layer in encoder_model.layers:
         layer.trainable = False
@@ -131,35 +151,61 @@ def main():
     # Data augmentation
     train_datagen = ImageDataGenerator(rescale=1./255)
     train = train_datagen.flow_from_directory(
-        TRAIN_PATH,
+        train_path,
         target_size=(224, 224),
-        batch_size=128,
-        class_mode=None
+        batch_size=64*20,
+        shuffle=True,
+        class_mode=None,
     )
 
-    tensorboard_callback = TensorBoard(log_dir=TENSORBOARD_PATH, histogram_freq=0, write_graph=True, write_images=True)
+    tensorboard_callback = TensorBoard(log_dir=tensorboard_path, histogram_freq=0, write_graph=True, write_images=True)
+
+    model_checkpoint_dir = os.path.splitext(model_save_path)[0]
+    model_name = os.path.splitext(os.path.basename(model_save_path))[0]
+    if not os.path.isdir(model_checkpoint_dir):
+        os.mkdir(model_checkpoint_dir)
+
 
     # train model
-    hists = []
-    batches = train.n // train.batch_size
-    for i in tqdm(range(batches)):
+    batches = int((train.n // train.batch_size) * percentage)
+    iterator = tqdm(range(batches)) if tqdm_on else range(batches)
+
+    for i in iterator:
         vgg_features, Y = run_encoder_vgg(train[i], encoder_model)
-        hist = decoder_model.fit(vgg_features, Y, validation_split=0.1, epochs=100, batch_size=32, verbose=0, callbacks=[tensorboard_callback])
-        hists.append(hist)
+        decoder_model.fit(vgg_features, Y, validation_split=0.1, epochs=epochs, batch_size=64, verbose=0, callbacks=[tensorboard_callback])
+
+        if not tqdm_on:
+            logging.info(f'Cycle done: {i+1}/{batches}')
+
+        if (i+1) % 10 == 0 and save_checkpoints:
+            decoder_model.save(os.path.join(model_checkpoint_dir, f'{model_name}_{i}.h5'))
 
     # save model
-    decoder_model.save(MODEL_SAVE_PATH)
-
-    # save histories to csv
-    concatted_histories = []
-    for hist in hists:
-        concatted_histories.append(pd.DataFrame(hist.history))
-
-    df_hist = pd.concat(concatted_histories)
-    df_hist.to_csv(HIST_DATAFRAME_PATH)
+    decoder_model.save(model_save_path)
 
 if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument('-d', '--data', help='Path to the data folder', required=True)
+    parser.add_argument('-t', '--tensorboard', help='Path to the tensorboard folder', required=True)
+    parser.add_argument('-s', '--save', help='Path where the model file will be saved', required=True)
+    parser.add_argument('-c', '--checkpoints', help='If set save checkpoints. Default: True', default=True, type=bool)
+    parser.add_argument('-e', '--epochs', help='Number of epochs to train the model', default=20, type=int)
+    parser.add_argument('-p', '--percentage', help='Percentage of the training data to use', default=1.0, type=float)
+    args = parser.parse_args()
+
+    TRAIN_PATH = args.data
+    TENSORBOARD_PATH = args.tensorboard
+    MODEL_SAVE_PATH = args.save
+
+    args = parser.parse_args()
     start = time.perf_counter()
-    main()
+    main(
+        train_path=TRAIN_PATH,
+        tensorboard_path=TENSORBOARD_PATH,
+        model_save_path=MODEL_SAVE_PATH,
+        epochs=args.epochs,
+        save_checkpoints=args.checkpoints,
+        percentage=args.percentage
+    )
     end = time.perf_counter()
     print(f'Took: {end-start:.2f} seconds')
