@@ -1,1 +1,1 @@
-from colorizer import *
+from colorizer.colorizer import Colorizer, Decoder, load_image

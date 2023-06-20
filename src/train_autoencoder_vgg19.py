@@ -27,6 +27,8 @@ MODEL_SAVE_PATH = '/app/models/decoder_throwaway.h5'
 # CHECKPOINT_PATH = "/app/checkpoints/cp.ckpt"
 
 # FUNCTIONS
+
+
 def create_XY(data: list):
     """
     Use the images from the data generator to create the X and Y arrays, where X is the grayscale image and Y is the ab channels.
@@ -47,19 +49,21 @@ def create_XY(data: list):
     X = X.reshape(X.shape + (1,))
     return X, Y
 
+
 def out_vgg(X, vgg_model):
     """
     Use the VGG19 model to extract the features from the grayscale images.
     """
     vgg_features = []
     for i, sample in enumerate(X):
-        sample = skc.gray2rgb(sample) # VGG19 model takes 3 channels as input
+        sample = skc.gray2rgb(sample)  # VGG19 model takes 3 channels as input
         sample = sample.reshape((1, 224, 224, 3))
         prediction = vgg_model.predict(sample, verbose=0)
         prediction = prediction.reshape((14, 14, 512))
         vgg_features.append(prediction)
     vgg_features = np.array(vgg_features)
     return vgg_features
+
 
 def create_decoder_model():
     """
@@ -89,6 +93,7 @@ def create_decoder_model():
     decoder_model.compile(optimizer=adam, loss='mse', metrics=['accuracy'])
     return decoder_model
 
+
 def run_encoder_vgg(data, vgg_model):
     """
     Run the encoder model on the data to extract the features from the grayscale images.
@@ -114,18 +119,16 @@ def predict_grayscale_to_rgb(file_paths, encoder_model, decoder_model):
         vggpred = encoder_model.predict(L, verbose=0)
         ab = decoder_model.predict(vggpred, verbose=0)
         ab = ab * 128
-     
+
         cur = np.zeros((224, 224, 3))
         cur[:, :, 0] = l
         cur[:, :, 1:] = ab
 
         rgb_img = skc.lab2rgb(cur)
-        rgb_img = ( rgb_img * 256 ).astype(np.uint8)
+        rgb_img = (rgb_img * 256).astype(np.uint8)
         rgb_images.append(rgb_img)
 
     return rgb_images
-
-
 
 
 def train(*, train_path: str, tensorboard_path: str, model_save_path: str, percentage: float, epochs: int, save_checkpoints: bool, tqdm_on: bool = False):
@@ -155,11 +158,11 @@ def train(*, train_path: str, tensorboard_path: str, model_save_path: str, perce
         decoder_model = create_decoder_model()
 
     # Data augmentation
-    train_datagen = ImageDataGenerator(rescale=1./255)
+    train_datagen = ImageDataGenerator(rescale=1. / 255)
     train = train_datagen.flow_from_directory(
         train_path,
         target_size=(224, 224),
-        batch_size=64*5,
+        batch_size=64 * 5,
         shuffle=True,
         class_mode=None,
     )
@@ -170,7 +173,6 @@ def train(*, train_path: str, tensorboard_path: str, model_save_path: str, perce
     model_name = os.path.splitext(os.path.basename(model_save_path))[0]
     if not os.path.isdir(model_checkpoint_dir) and save_checkpoints:
         os.mkdir(model_checkpoint_dir)
-
 
     # train model
     batches = int((train.n // train.batch_size) * percentage)
@@ -183,11 +185,12 @@ def train(*, train_path: str, tensorboard_path: str, model_save_path: str, perce
         if not tqdm_on:
             print(f'Cycle done: {i+1}/{batches}')
 
-        if (i+1) % 10 == 0 and save_checkpoints:
+        if (i + 1) % 10 == 0 and save_checkpoints:
             decoder_model.save(os.path.join(model_checkpoint_dir, f'{model_name}_{i}.h5'))
 
     # save model
     decoder_model.save(model_save_path)
+
 
 if __name__ == '__main__':
     parser = ArgumentParser()
