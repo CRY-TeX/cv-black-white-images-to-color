@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from argparse import ArgumentParser
@@ -129,9 +128,10 @@ def predict_grayscale_to_rgb(file_paths, encoder_model, decoder_model):
 
 
 
-def main(*, train_path: str, tensorboard_path: str, model_save_path: str, percentage: float, epochs: int, save_checkpoints: bool, tqdm_on: bool = False):
-    if os.path.isfile('/app/models/encoder/vgg19_encoder.h5'):
-        encoder_model = km.load_model('/app/models/encoder/vgg19_encoder.h5')
+def train(*, train_path: str, tensorboard_path: str, model_save_path: str, percentage: float, epochs: int, save_checkpoints: bool, tqdm_on: bool = False):
+    encoder_path = '/app/models/encoder/vgg19_encoder.h5'
+    if os.path.isfile(encoder_path):
+        encoder_model = km.load_model(encoder_path)
     else:
         # download VGG19 model
         vgg_model = VGG19()
@@ -146,14 +146,20 @@ def main(*, train_path: str, tensorboard_path: str, model_save_path: str, percen
         layer.trainable = False
 
     # decoder model
-    decoder_model = create_decoder_model()
+    if os.path.isfile(model_save_path):
+        decoder_model = km.load_model(model_save_path)
+        print('Loaded decoder model from file.')
+        adam = keras.optimizers.Adam(learning_rate=0.00001)
+        decoder_model.compile(optimizer=adam, loss='mse', metrics=['accuracy'])
+    else:
+        decoder_model = create_decoder_model()
 
     # Data augmentation
     train_datagen = ImageDataGenerator(rescale=1./255)
     train = train_datagen.flow_from_directory(
         train_path,
         target_size=(224, 224),
-        batch_size=64*20,
+        batch_size=64*5,
         shuffle=True,
         class_mode=None,
     )
@@ -162,7 +168,7 @@ def main(*, train_path: str, tensorboard_path: str, model_save_path: str, percen
 
     model_checkpoint_dir = os.path.splitext(model_save_path)[0]
     model_name = os.path.splitext(os.path.basename(model_save_path))[0]
-    if not os.path.isdir(model_checkpoint_dir):
+    if not os.path.isdir(model_checkpoint_dir) and save_checkpoints:
         os.mkdir(model_checkpoint_dir)
 
 
@@ -172,10 +178,10 @@ def main(*, train_path: str, tensorboard_path: str, model_save_path: str, percen
 
     for i in iterator:
         vgg_features, Y = run_encoder_vgg(train[i], encoder_model)
-        decoder_model.fit(vgg_features, Y, validation_split=0.1, epochs=epochs, batch_size=64, verbose=0, callbacks=[tensorboard_callback])
+        decoder_model.fit(vgg_features, Y, validation_split=0.1, epochs=epochs, batch_size=32, verbose=0, callbacks=[tensorboard_callback])
 
         if not tqdm_on:
-            logging.info(f'Cycle done: {i+1}/{batches}')
+            print(f'Cycle done: {i+1}/{batches}')
 
         if (i+1) % 10 == 0 and save_checkpoints:
             decoder_model.save(os.path.join(model_checkpoint_dir, f'{model_name}_{i}.h5'))
@@ -189,7 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--tensorboard', help='Path to the tensorboard folder', required=True)
     parser.add_argument('-s', '--save', help='Path where the model file will be saved', required=True)
     parser.add_argument('-c', '--checkpoints', help='If set save checkpoints. Default: True', default=True, type=bool)
-    parser.add_argument('-e', '--epochs', help='Number of epochs to train the model', default=20, type=int)
+    parser.add_argument('-e', '--epochs', help='Number of epochs to train the model', default=40, type=int)
     parser.add_argument('-p', '--percentage', help='Percentage of the training data to use', default=1.0, type=float)
     args = parser.parse_args()
 
@@ -199,7 +205,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     start = time.perf_counter()
-    main(
+    train(
         train_path=TRAIN_PATH,
         tensorboard_path=TENSORBOARD_PATH,
         model_save_path=MODEL_SAVE_PATH,
