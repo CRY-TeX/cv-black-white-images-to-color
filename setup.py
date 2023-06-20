@@ -5,7 +5,7 @@ setup(
     version="1.0",
     packages=find_packages(),
     package_data={
-        "colorizer": ["models/*"],
+        "colorizer": ["models/encoder/*", "models/decoder/*"],
     },
     author="Daniel Stoffel",
     author_email="daniel.stoffel@stud.th-deg.de",
